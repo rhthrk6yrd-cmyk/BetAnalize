@@ -4,6 +4,8 @@ BetAnalyzer Pro - Telegram Mini App
 Serveur Flask principal avec API + rendu HTML
 """
 
+import os
+from datetime import datetime, timedelta
 import requests
 from flask import Flask, render_template, request, jsonify
 from config import config
@@ -19,9 +21,6 @@ from sports_engine import (
 
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
-
-# Cache en mémoire (simple, suffisant pour Render free)
-match_cache = {"matches": [], "competitions": [], "is_demo": True}
 
 
 # ============================================================
@@ -41,16 +40,16 @@ def index():
     is_demo = data["is_demo"]
 
     # Compteur live
-    live_count = sum(1 for m in matches if m["status"] in LIVE_STATUSES)
+    live_count = sum(1 for m in matches if m.get("status") in LIVE_STATUSES)
 
     # Grouper par compétition
     grouped = {}
     for match in matches:
-        code = match["competition"]["code"]
+        code = match.get("competition", {}).get("code", "OTHER")
         if code not in grouped:
             grouped[code] = {
-                "name": match["competition"]["name"],
-                "emblem": match["competition"]["emblem"],
+                "name": match.get("competition", {}).get("name", "Autre"),
+                "emblem": match.get("competition", {}).get("emblem", "⚽"),
                 "matches": [],
             }
         grouped[code]["matches"].append(match)
@@ -60,8 +59,7 @@ def index():
     window_info = (
         f"📅 Fenêtre: {window['window_start']} → {window['window_end']} | "
         f"✅ {window['active_count']} actifs | "
-        f"🗑️ {window['expired_count']} expirés | "
-        f"🆕 {window['new_count']} nouveaux"
+        f"🗑️ {window['expired_count']} expirés"
     )
 
     # Détection doublons
@@ -129,7 +127,7 @@ def telegram_webhook():
             data = fetch_matches("IN_PLAY", "all")
             live = data["matches"]
             if not live:
-                send_telegram_message(chat_id, {"text": "😴 Aucun match en direct."})
+                send_telegram_message(chat_id, {"text": "😴 Aucun match en direct pour le moment."})
             else:
                 msg = "🔴 *Matchs en direct :*\n\n"
                 for m in live[:10]:
@@ -167,64 +165,72 @@ def telegram_webhook():
 
 
 # ============================================================
-# FONCTIONS UTILITAIRES
+# FONCTIONS UTILITAIRES (CORRECTION DU FORMAT DE DATE)
 # ============================================================
 
 def fetch_matches(status_filter: str = "all", competition_filter: str = "all") -> dict:
-    """Récupère les matchs depuis l'API ou le mode démo."""
-    if config.IS_DEMO:
+    """Récupère les matchs depuis l'API Football Data ou le mode démo."""
+    api_key = config.FOOTBALL_DATA_API_KEY
+
+    if not api_key:
+        return {
+            "matches": get_demo_matches(),
+            "competitions": get_demo_competitions(),
+            "is_demo": True,
+        }
+
+    try:
+        now = datetime.utcnow()
+        # Format obligatoire YYYY-MM-DD pour Football Data API
+        date_from = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+        date_to = (now + timedelta(days=2)).strftime("%Y-%m-%d")
+
+        params = {
+            "dateFrom": date_from,
+            "dateTo": date_to,
+        }
+
+        if status_filter != "all":
+            params["status"] = status_filter
+        if competition_filter != "all":
+            params["competitions"] = competition_filter
+
+        resp = requests.get(
+            f"{config.FOOTBALL_API_BASE}/matches",
+            headers={"X-Auth-Token": api_key},
+            params=params,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        raw_matches = data.get("matches", [])
+        matches = [enrich_match(m) for m in raw_matches]
+
+        # Extraire les compétitions
+        comp_map = {}
+        for m in matches:
+            c = m["competition"]["code"]
+            if c not in comp_map:
+                comp_map[c] = {
+                    "code": c,
+                    "name": m["competition"]["name"],
+                    "emblem": m["competition"].get("emblem", "⚽"),
+                }
+        competitions = list(comp_map.values())
+        is_demo = False
+
+    except Exception as e:
+        print(f"API Error: {e}")
         matches = get_demo_matches()
         competitions = get_demo_competitions()
         is_demo = True
-    else:
-        try:
-            from sports_engine import apply_sliding_window
-            window = apply_sliding_window([])
 
-            params = {
-                "dateFrom": window["window_start"].replace("/", "-"),
-                "dateTo": window["window_end"].replace("/", "-"),
-            }
-            if status_filter != "all":
-                params["status"] = status_filter
-            if competition_filter != "all":
-                params["competitions"] = competition_filter
-
-            resp = requests.get(
-                f"{config.FOOTBALL_API_BASE}/matches",
-                headers={"X-Auth-Token": config.FOOTBALL_DATA_API_KEY},
-                params=params,
-                timeout=10,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-
-            matches = [enrich_match(m) for m in data.get("matches", [])]
-
-            # Extraire les compétitions uniques
-            comp_map = {}
-            for m in matches:
-                c = m["competition"]["code"]
-                if c not in comp_map:
-                    comp_map[c] = {
-                        "code": c,
-                        "name": m["competition"]["name"],
-                        "emblem": m["competition"]["emblem"],
-                    }
-            competitions = list(comp_map.values())
-            is_demo = False
-
-        except Exception as e:
-            print(f"API Error: {e}")
-            matches = get_demo_matches()
-            competitions = get_demo_competitions()
-            is_demo = True
-
-    # Appliquer les filtres
+    # Filtrer par statut / compétition
     if status_filter != "all":
-        matches = [m for m in matches if m["status"] == status_filter]
+        matches = [m for m in matches if m.get("status") == status_filter]
     if competition_filter != "all":
-        matches = [m for m in matches if m["competition"]["code"] == competition_filter]
+        matches = [m for m in matches if m.get("competition", {}).get("code") == competition_filter]
 
     # Anti-doublon
     matches = filter_duplicate_live_teams(matches)
