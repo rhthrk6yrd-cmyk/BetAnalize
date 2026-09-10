@@ -1,0 +1,441 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>BetAnalyzer Pro</title>
+
+    <!-- Telegram Web App Script -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'highlight': '#00E676',
+                        'gold': '#FFD700',
+                        'text-primary': '#FFFFFF',
+                        'text-secondary': '#9CA3AF',
+                        'live-pulse': '#FF4444',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            background: #0a0a0f;
+            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+        .glass {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .animate-slide-up {
+            animation: slideUp 0.4s ease-out;
+        }
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes pulse-live {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        .animate-pulse-live { animation: pulse-live 1.5s infinite; }
+
+        /* Pitch / Terrain */
+        .pitch {
+            background: linear-gradient(to bottom, rgba(34,120,50,0.3), rgba(34,100,50,0.2));
+            aspect-ratio: 68/105;
+            position: relative;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.1);
+            overflow: hidden;
+        }
+        .pitch-line { position: absolute; background: rgba(255,255,255,0.15); }
+        .pitch-circle {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 60px; height: 60px;
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 50%;
+        }
+        .player-dot {
+            position: absolute; transform: translate(-50%, -50%);
+            width: 26px; height: 28px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 9px; font-weight: bold; color: white;
+            border: 2px solid rgba(255,255,255,0.5);
+            cursor: pointer; transition: transform 0.2s;
+        }
+        .player-dot:hover { transform: translate(-50%, -50%) scale(1.3); z-index: 10; }
+        .player-dot.missing {
+            background: rgba(239,68,68,0.8) !important;
+            border-color: #f87171;
+            text-decoration: line-through;
+        }
+        .player-name {
+            position: absolute; transform: translateX(-50%);
+            font-size: 8px; white-space: nowrap; text-align: center;
+            color: rgba(255,255,255,0.85); max-width: 55px; overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .player-name.missing { color: #f87171; text-decoration: line-through; }
+
+        /* Tooltip */
+        .tooltip-box {
+            display: none; position: absolute; bottom: 110%; left: 50%;
+            transform: translateX(-50%); background: rgba(0,0,0,0.92);
+            border-radius: 8px; padding: 6px 8px; font-size: 9px;
+            white-space: nowrap; z-index: 50; box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        }
+        .player-dot:hover .tooltip-box { display: block; }
+
+        .pb-safe { padding-bottom: env(safe-area-inset-bottom, 16px); }
+    </style>
+</head>
+
+<body class="min-h-screen pb-safe">
+    <main class="max-w-7xl mx-auto px-4 py-4">
+
+        <!-- ==================== HERO ==================== -->
+        <div class="mb-6 animate-slide-up">
+            <div class="glass rounded-2xl p-5">
+                <div class="flex items-start justify-between flex-wrap gap-4">
+                    <div>
+                        <h1 class="text-2xl sm:text-3xl font-bold mb-2">
+                            <span class="bg-gradient-to-r from-highlight via-gold to-highlight bg-clip-text text-transparent">
+                                ⚽ BetAnalyzer Pro
+                            </span>
+                        </h1>
+                        <p class="text-text-secondary text-xs max-w-lg">
+                            Analyse complète : forme, confrontations, tactique, alchimie des joueurs et impact des absences.
+                        </p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        {% if live_count > 0 %}
+                        <div class="glass rounded-xl px-3 py-2 flex items-center gap-2">
+                            <span class="w-3 h-3 bg-live-pulse rounded-full animate-pulse-live"></span>
+                            <div>
+                                <p class="text-xl font-bold text-white">{{ live_count }}</p>
+                                <p class="text-[9px] text-text-secondary uppercase tracking-wider">Live</p>
+                            </div>
+                        </div>
+                        {% endif %}
+                        <div class="glass rounded-xl px-3 py-2 text-center">
+                            <p class="text-xl font-bold text-gold">{{ total_matches }}</p>
+                            <p class="text-[9px] text-text-secondary uppercase tracking-wider">Matchs</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== FENÊTRE GLISSANTE ==================== -->
+        <div class="glass rounded-xl p-3 mb-4 text-[10px] text-text-secondary font-mono">
+            {{ window_info }}
+        </div>
+
+        <!-- ==================== DOUBLONS ==================== -->
+        {% if duplicates.has_duplicates %}
+        <div class="glass rounded-xl p-3 mb-4 border border-yellow-500/20 bg-yellow-500/5">
+            <p class="text-xs text-yellow-400">
+                ⚠️ Doublons filtrés : {{ duplicates.duplicate_teams | join(', ') }}
+            </p>
+        </div>
+        {% endif %}
+
+        <!-- ==================== DÉMO ==================== -->
+        {% if is_demo %}
+        <div class="glass rounded-xl p-3 mb-4 flex items-center gap-3 border border-gold/20">
+            <span class="text-xl">💡</span>
+            <div class="flex-1">
+                <p class="text-sm font-medium text-gold">Mode Démonstration</p>
+                <p class="text-xs text-text-secondary">Données simulées. Ajoute ta clé API pour les matchs réels.</p>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- ==================== FILTRES ==================== -->
+        <div class="mb-4 flex flex-wrap gap-2">
+            <form method="GET" action="/" class="flex flex-wrap gap-2 w-full">
+                <!-- Statut -->
+                <select name="status" onchange="this.form.submit()"
+                    class="glass rounded-lg px-3 py-2 text-xs text-white bg-[#12121a] border border-white/10 outline-none">
+                    <option value="all" {% if status_filter == 'all' %}selected{% endif %}>Tous les statuts</option>
+                    <option value="SCHEDULED" {% if status_filter == 'SCHEDULED' %}selected{% endif %}>📅 Programmés</option>
+                    <option value="IN_PLAY" {% if status_filter == 'IN_PLAY' %}selected{% endif %}>🔴 En direct</option>
+                    <option value="FINISHED" {% if status_filter == 'FINISHED' %}selected{% endif %}>✅ Terminés</option>
+                </select>
+
+                <!-- Compétition -->
+                <select name="competition" onchange="this.form.submit()"
+                    class="glass rounded-lg px-3 py-2 text-xs text-white bg-[#12121a] border border-white/10 outline-none">
+                    <option value="all" {% if competition_filter == 'all' %}selected{% endif %}>Toutes les compétitions</option>
+                    {% for comp in competitions %}
+                    <option value="{{ comp.code }}" {% if competition_filter == comp.code %}selected{% endif %}>
+                        {{ comp.emblem }} {{ comp.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </form>
+        </div>
+
+        <!-- ==================== MATCHS ==================== -->
+        {% if total_matches == 0 %}
+        <div class="glass rounded-2xl p-10 text-center">
+            <p class="text-4xl mb-3">🔍</p>
+            <p class="text-lg font-medium mb-1">Aucun match trouvé</p>
+            <p class="text-sm text-text-secondary">Essayez de modifier vos filtres</p>
+        </div>
+        {% else %}
+        <div class="space-y-6">
+            {% for comp_code, comp_data in grouped.items() %}
+            <div class="animate-slide-up">
+                <!-- En-tête compétition -->
+                <div class="flex items-center gap-2 mb-3">
+                    <span class="text-lg">{{ comp_data.emblem }}</span>
+                    <h2 class="text-base font-bold">{{ comp_data.name }}</h2>
+                    <span class="text-[10px] text-text-secondary bg-white/5 px-2 py-0.5 rounded-full">
+                        {{ comp_data.matches | length }} match{{ 's' if comp_data.matches | length > 1 else '' }}
+                    </span>
+                </div>
+
+                <!-- Grille de matchs -->
+                <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {% for match in comp_data.matches %}
+                    <div>
+                        <!-- Carte Match -->
+                        <div class="glass rounded-xl p-4 hover:bg-white/10 transition-all cursor-pointer"
+                             onclick="toggleDetails('match-{{ match.id }}')">
+
+                            <div class="flex items-center justify-between mb-3">
+                                <span class="text-[10px] text-text-secondary">Journée {{ match.matchday }}</span>
+                                {% if match.status == 'IN_PLAY' or match.status == 'LIVE' %}
+                                <span class="flex items-center gap-1 text-[10px] text-red-400 font-bold">
+                                    <span class="w-2 h-2 bg-red-500 rounded-full animate-pulse-live"></span>
+                                    {{ match.minute }}'
+                                </span>
+                                {% elif match.status == 'FINISHED' %}
+                                <span class="text-[10px] text-green-400">Terminé</span>
+                                {% else %}
+                                <span class="text-[10px] text-text-secondary">{{ match.utcDate[:16] | replace('T', ' ') }}</span>
+                                {% endif %}
+                            </div>
+
+                            <div class="flex items-center justify-between">
+                                <div class="flex-1 text-right pr-2">
+                                    <p class="text-sm font-bold truncate">{{ match.homeTeam.shortName }}</p>
+                                </div>
+                                <div class="text-center px-2">
+                                    {% if match.score.fullTime.home is not none %}
+                                    <span class="text-xl font-black">{{ match.score.fullTime.home }}</span>
+                                    <span class="text-text-secondary mx-1">-</span>
+                                    <span class="text-xl font-black">{{ match.score.fullTime.away }}</span>
+                                    {% else %}
+                                    <span class="text-sm text-text-secondary">VS</span>
+                                    {% endif %}
+                                </div>
+                                <div class="flex-1 text-left pl-2">
+                                    <p class="text-sm font-bold truncate">{{ match.awayTeam.shortName }}</p>
+                                </div>
+                            </div>
+
+                            {% if match.analysis %}
+                            <div class="flex items-center justify-center gap-3 mt-3 text-[9px] text-text-secondary">
+                                <span>🎯 Tac: {{ match.analysis.tactical }}</span>
+                                <span>🔗 Alc: {{ match.analysis.chemistry }}</span>
+                                <span>🚑 Abs: {{ match.analysis.missing_player }}</span>
+                            </div>
+                            {% endif %}
+
+                            <p class="text-center text-[9px] text-highlight mt-2">▼ DÉTAILS DU MATCH</p>
+                        </div>
+
+                        <!-- ==================== PANNEAU DÉTAILS ==================== -->
+                        <div id="match-{{ match.id }}" class="hidden mt-3 space-y-3 animate-slide-up">
+
+                            <!-- SCHÉMAS TACTIQUES -->
+                            {% if match.homeTeam.formation %}
+                            <div class="grid gap-3 sm:grid-cols-2">
+                                <!-- Domicile -->
+                                <div class="glass rounded-xl p-3">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <h3 class="text-xs font-bold">🎯 {{ match.homeTeam.shortName }}</h3>
+                                        <span class="text-[10px] px-2 py-0.5 rounded bg-white/10 text-gold font-mono">{{ match.homeTeam.formation.name }}</span>
+                                    </div>
+                                    <div class="pitch">
+                                        <div class="pitch-line" style="top:50%;left:0;right:0;height:1px;"></div>
+                                        <div class="pitch-circle"></div>
+                                        {% for pos in match.homeTeam.formation.positions %}
+                                        {% if pos.player %}
+                                        <div class="player-dot {% if pos.player.is_missing %}missing{% endif %}"
+                                             style="left:{{ pos.x }}%;top:{{ pos.y }}%;background:rgba(76,175,80,0.85);">
+                                            {{ pos.player.number }}
+                                            <div class="tooltip-box">
+                                                <p class="font-bold">{{ pos.player.name }}</p>
+                                                <p class="text-gray-400">⭐{{ pos.player.rating }} | ⚽{{ pos.player.stats.goals }} | 🅰️{{ pos.player.stats.assists }}</p>
+                                                {% if pos.player.is_missing %}
+                                                <p class="text-red-400">❌ {{ pos.player.missing_reason }}</p>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                        <span class="player-name {% if pos.player.is_missing %}missing{% endif %}" style="left:{{ pos.x }}%;top:calc({{ pos.y }}% + 15px);">
+                                            {{ pos.player.name.split(' ')[-1] }}
+                                        </span>
+                                        {% endif %}
+                                        {% endfor %}
+                                    </div>
+                                </div>
+
+                                <!-- Extérieur -->
+                                {% if match.awayTeam.formation %}
+                                <div class="glass rounded-xl p-3">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <h3 class="text-xs font-bold">🎯 {{ match.awayTeam.shortName }}</h3>
+                                        <span class="text-[10px] px-2 py-0.5 rounded bg-white/10 text-gold font-mono">{{ match.awayTeam.formation.name }}</span>
+                                    </div>
+                                    <div class="pitch">
+                                        <div class="pitch-line" style="top:50%;left:0;right:0;height:1px;"></div>
+                                        <div class="pitch-circle"></div>
+                                        {% for pos in match.awayTeam.formation.positions %}
+                                        {% if pos.player %}
+                                        <div class="player-dot {% if pos.player.is_missing %}missing{% endif %}"
+                                             style="left:{{ pos.x }}%;top:{{ 100 - pos.y }}%;background:rgba(33,150,243,0.85);">
+                                            {{ pos.player.number }}
+                                            <div class="tooltip-box">
+                                                <p class="font-bold">{{ pos.player.name }}</p>
+                                                <p class="text-gray-400">⭐{{ pos.player.rating }} | ⚽{{ pos.player.stats.goals }} | 🅰️{{ pos.player.stats.assists }}</p>
+                                                {% if pos.player.is_missing %}
+                                                <p class="text-red-400">❌ {{ pos.player.missing_reason }}</p>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                        <span class="player-name {% if pos.player.is_missing %}missing{% endif %}" style="left:{{ pos.x }}%;top:calc({{ 100 - pos.y }}% + 15px);">
+                                            {{ pos.player.name.split(' ')[-1] }}
+                                        </span>
+                                        {% endif %}
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+
+                            <!-- ALCHIMIE DES JOUEURS -->
+                            <div class="grid gap-3 sm:grid-cols-2">
+                                {% for team_key in ['homeTeam', 'awayTeam'] %}
+                                {% set team = match[team_key] %}
+                                {% if team.chemistryLinks %}
+                                <div class="glass rounded-xl p-3">
+                                    {% set avg = (team.chemistryLinks | map(attribute='chemistry_score') | sum / team.chemistryLinks | length) | round | int %}
+                                    <div class="flex items-center justify-between mb-2">
+                                        <h3 class="text-xs font-bold">🔗 Alchimie {{ team.shortName }}</h3>
+                                        <span class="text-xs font-bold text-gold">{{ avg }}%</span>
+                                    </div>
+                                    <div class="w-full h-1.5 bg-white/10 rounded-full mb-2 overflow-hidden">
+                                        <div class="h-full rounded-full {% if avg >= 75 %}bg-green-500{% elif avg >= 50 %}bg-yellow-500{% else %}bg-red-500{% endif %}" style="width:{{ avg }}%"></div>
+                                    </div>
+                                    <div class="space-y-1">
+                                        {% for link in team.chemistryLinks[:4] %}
+                                        <div class="flex items-center gap-1.5 p-1 rounded bg-white/5 text-[9px]">
+                                            <span class="text-highlight font-bold">#{{ link.player1_number }}</span>
+                                            <span class="truncate flex-1">{{ link.player1_name.split(' ')[-1] }}</span>
+                                            <span class="text-gold font-bold px-1">{{ link.chemistry_score }}</span>
+                                            <span class="truncate flex-1 text-right">{{ link.player2_name.split(' ')[-1] }}</span>
+                                            <span class="text-highlight font-bold">#{{ link.player2_number }}</span>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                                {% endif %}
+                                {% endfor %}
+                            </div>
+
+                            <!-- ABSENCES -->
+                            {% if match.missingPlayerAnalysis.home or match.missingPlayerAnalysis.away %}
+                            <div class="glass rounded-xl p-3">
+                                <h3 class="text-xs font-bold mb-2">🚑 Absences Clés</h3>
+                                <div class="grid gap-2 sm:grid-cols-2">
+                                    {% for side in ['home', 'away'] %}
+                                    {% set analysis = match.missingPlayerAnalysis[side] %}
+                                    {% if analysis %}
+                                    <div class="rounded p-2 bg-red-500/10 border border-red-500/20 text-[10px]">
+                                        <div class="flex justify-between font-bold text-red-400">
+                                            <span>{{ analysis.team }}</span>
+                                            <span>-{{ analysis.impact_score }} impact</span>
+                                        </div>
+                                        <p class="font-semibold text-white mt-1">❌ {{ analysis.player.name }} ({{ analysis.player.position }})</p>
+                                        <p class="text-text-secondary text-[9px] mt-0.5">📋 {{ analysis.player.missing_reason or 'Raison inconnue' }}</p>
+                                    </div>
+                                    {% endif %}
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endif %}
+
+                            <!-- 11 CRITÈRES -->
+                            {% if match.analysis %}
+                            <div class="glass rounded-xl p-3">
+                                <h3 class="text-xs font-bold mb-2">📊 Score par critère</h3>
+                                <div class="grid grid-cols-4 sm:grid-cols-6 gap-1.5 text-center text-[9px]">
+                                    <div class="p-1 rounded bg-white/5"><p class="text-text-secondary">Forme</p><p class="font-bold text-highlight">{{ match.analysis.form }}</p></div>
+                                    <div class="p-1 rounded bg-white/5"><p class="text-text-secondary">H2H</p><p class="font-bold text-highlight">{{ match.analysis.head_to_head }}</p></div>
+                                    <div class="p-1 rounded bg-white/5"><p class="text-text-secondary">Class.</p><p class="font-bold text-highlight">{{ match.analysis.ranking }}</p></div>
+                                    <div class="p-1 rounded bg-white/5"><p class="text-text-secondary">Enjeu</p><p class="font-bold text-highlight">{{ match.analysis.stakes }}</p></div>
+                                    <div class="p-1 rounded bg-white/5"><p class="text-text-secondary">Dom/Ext</p><p class="font-bold text-highlight">{{ match.analysis.home_away }}</p></div>
+                                    <div class="p-1 rounded bg-white/5"><p class="text-text-secondary">Buts</p><p class="font-bold text-highlight">{{ match.analysis.goals }}</p></div>
+                                    <div class="p-1 rounded bg-white/5"><p class="text-text-secondary">Momen.</p><p class="font-bold text-highlight">{{ match.analysis.momentum }}</p></div>
+                                    <div class="p-1 rounded bg-white/5"><p class="text-text-secondary">O/U 2.5</p><p class="font-bold text-highlight">{{ match.analysis.over_under }}</p></div>
+                                    <div class="p-1 rounded bg-white/5"><p class="text-text-secondary">Tactique</p><p class="font-bold text-gold">{{ match.analysis.tactical }}</p></div>
+                                    <div class="p-1 rounded bg-white/5"><p class="text-text-secondary">Alchimie</p><p class="font-bold text-gold">{{ match.analysis.chemistry }}</p></div>
+                                    <div class="p-1 rounded bg-white/5 col-span-2 sm:col-span-2"><p class="text-text-secondary">Absences</p><p class="font-bold text-gold">{{ match.analysis.missing_player }}</p></div>
+                                </div>
+                            </div>
+                            {% endif %}
+
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+    </main>
+
+    <!-- JavaScript local -->
+    <script>
+        // Initialiser Telegram WebApp
+        if (window.Telegram && window.Telegram.WebApp) {
+            const tg = window.Telegram.WebApp;
+            tg.ready();
+            tg.expand();
+        }
+
+        // Fonction pour ouvrir / fermer les détails d'un match
+        function toggleDetails(elementId) {
+            const el = document.getElementById(elementId);
+            if (el) {
+                if (el.classList.contains('hidden')) {
+                    el.classList.remove('hidden');
+                } else {
+                    el.classList.add('hidden');
+                }
+            }
+        }
+    </script>
+</body>
+</html>
