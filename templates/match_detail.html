@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ match.homeTeam.name }} vs {{ match.awayTeam.name }} - Analyse IA</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --bg-main: #ffffff; --bg-card: #f5f3ff; --text-main: #1f2937; --text-sec: #6b7280;
+            --border: rgba(124, 58, 237, 0.15);
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-main: #0a0511; --bg-card: #1a0f2e; --text-main: #ffffff; --text-sec: #a1a1aa;
+                --border: rgba(255, 255, 255, 0.08);
+            }
+        }
+        body { background: var(--bg-main); color: var(--text-main); font-family: -apple-system, sans-serif; margin: 0; }
+        .card { background: var(--bg-card); border: 1px solid var(--border); }
+        .text-sec { color: var(--text-sec); }
+        .bar { height: 6px; border-radius: 3px; background: rgba(124,58,237,0.15); overflow: hidden; }
+        .bar-fill { height: 100%; background: linear-gradient(90deg, #7c3aed, #00E676); border-radius: 3px; transition: width 0.6s; }
+    </style>
+</head>
+<body class="pb-6">
+    <div class="max-w-3xl mx-auto p-4">
+
+        <!-- Retour -->
+        <a href="/" class="inline-flex items-center gap-1 text-sm text-purple-500 mb-3">← Retour</a>
+
+        <!-- En-tête match -->
+        <div class="card rounded-2xl p-4 mb-4 text-center">
+            <p class="text-xs text-sec mb-2">{{ match.competition.flag }} {{ match.competition.name }}</p>
+            <div class="flex items-center justify-around">
+                <div>
+                    <div class="w-14 h-14 bg-purple-500/20 rounded-full flex items-center justify-center text-sm font-black mx-auto mb-1">
+                        {{ match.homeTeam.shortName[:3] }}
+                    </div>
+                    <p class="text-xs font-bold">{{ match.homeTeam.name }}</p>
+                </div>
+                <div class="text-center">
+                    {% if match.score.fullTime.home is not none %}
+                    <p class="text-3xl font-black">{{ match.score.fullTime.home }} - {{ match.score.fullTime.away }}</p>
+                    {% else %}
+                    <p class="text-xl text-sec">VS</p>
+                    {% endif %}
+                    <p class="text-[10px] text-sec mt-1">{{ match.utcDate[:16] | replace('T', ' ') }}</p>
+                </div>
+                <div>
+                    <div class="w-14 h-14 bg-purple-500/20 rounded-full flex items-center justify-center text-sm font-black mx-auto mb-1">
+                        {{ match.awayTeam.shortName[:3] }}
+                    </div>
+                    <p class="text-xs font-bold">{{ match.awayTeam.name }}</p>
+                </div>
+            </div>
+        </div>
+
+        {% set a = match.analysis %}
+
+        <!-- Résultat final -->
+        <div class="card rounded-2xl p-4 mb-4 border-2 border-purple-500">
+            <p class="text-xs text-sec mb-2 text-center">🤖 PRONOSTIC IA (16 critères)</p>
+            <div class="grid grid-cols-3 gap-2 text-center">
+                <div>
+                    <p class="text-[10px] text-sec">Prédiction</p>
+                    <p class="text-2xl font-black text-purple-500">{{ a.prediction }}</p>
+                    <p class="text-[10px]">{{ a.prediction_label }}</p>
+                </div>
+                <div>
+                    <p class="text-[10px] text-sec">Confiance</p>
+                    <p class="text-2xl font-black text-yellow-500">{{ a.confidence }}%</p>
+                    <div class="bar mt-1"><div class="bar-fill" style="width:{{ a.confidence }}%"></div></div>
+                </div>
+                <div>
+                    <p class="text-[10px] text-sec">Sécurité</p>
+                    <p class="text-sm font-black text-green-500 mt-2">{{ a.safety_bet }}</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Distribution Poisson -->
+        {% set p = a.criteria.poisson %}
+        <div class="card rounded-2xl p-4 mb-4">
+            <h3 class="text-sm font-black mb-2">🎲 Distribution Poisson (xG)</h3>
+            <div class="grid grid-cols-3 gap-2 text-center">
+                <div><p class="text-[10px] text-sec">Victoire {{ match.homeTeam.shortName }}</p><p class="text-xl font-black">{{ p.prob_1 }}%</p></div>
+                <div><p class="text-[10px] text-sec">Match Nul</p><p class="text-xl font-black">{{ p.prob_N }}%</p></div>
+                <div><p class="text-[10px] text-sec">Victoire {{ match.awayTeam.shortName }}</p><p class="text-xl font-black">{{ p.prob_2 }}%</p></div>
+            </div>
+            <p class="text-[10px] text-sec text-center mt-2">λ = {{ p.lambda_home }} vs {{ p.lambda_away }}</p>
+        </div>
+
+        <!-- Over/Under + BTTS -->
+        {% set ou = a.criteria.over_under_btts %}
+        <div class="card rounded-2xl p-4 mb-4">
+            <h3 class="text-sm font-black mb-2">📊 Objectifs secondaires</h3>
+            <div class="grid grid-cols-2 gap-2 text-xs">
+                <div class="p-2 bg-purple-500/10 rounded"><p class="text-sec">+2.5 Buts</p><p class="font-black">{{ ou.over_25 }}%</p></div>
+                <div class="p-2 bg-purple-500/10 rounded"><p class="text-sec">-3.5 Buts</p><p class="font-black">{{ ou.over_35 }}%</p></div>
+                <div class="p-2 bg-purple-500/10 rounded"><p class="text-sec">BTTS OUI</p><p class="font-black">{{ ou.btts_yes }}%</p></div>
+                <div class="p-2 bg-purple-500/10 rounded"><p class="text-sec">BTTS NON</p><p class="font-black">{{ ou.btts_no }}%</p></div>
+            </div>
+        </div>
+
+        <!-- Les 16 critères en détail -->
+        <div class="card rounded-2xl p-4 mb-4">
+            <h3 class="text-sm font-black mb-3">📋 Les 16 critères d'analyse</h3>
+
+            {% set criteria_list = [
+                ('📈 Forme récente (25%)', a.criteria.form.home.score, a.criteria.form.away.score),
+                ('🏆 Classement (20%)', a.criteria.ranking.home.score, a.criteria.ranking.away.score),
+                ('⚔️ H2H (15%)', a.criteria.h2h.score, 100 - a.criteria.h2h.score),
+                ('🎯 Enjeu (10%)', a.criteria.stakes.home.score, a.criteria.stakes.away.score),
+                ('🏠 Dom/Ext (10%)', a.criteria.home_away.home.score, a.criteria.home_away.away.score),
+                ('⚽ Attaque/Défense (10%)', a.criteria.goals.home.score, a.criteria.goals.away.score),
+                ('🔥 Momentum (10%)', a.criteria.momentum.home.score, a.criteria.momentum.away.score),
+                ('🧪 Alchimie', a.criteria.chemistry.home.score, a.criteria.chemistry.away.score),
+                ('🤕 Absences', a.criteria.missing.home.score, a.criteria.missing.away.score),
+                ('💤 Fatigue', a.criteria.fatigue.home.score, a.criteria.fatigue.away.score),
+                ('🧱 Clean Sheet', a.criteria.clean_sheet.home.score, a.criteria.clean_sheet.away.score),
+                ('🟨 Discipline', a.criteria.discipline.home.score, a.criteria.discipline.away.score),
+            ] %}
+
+            {% for label, home_val, away_val in criteria_list %}
+            <div class="mb-3">
+                <div class="flex justify-between text-[11px] mb-1">
+                    <span class="font-bold">{{ home_val }}%</span>
+                    <span class="text-sec font-semibold">{{ label }}</span>
+                    <span class="font-bold">{{ away_val }}%</span>
+                </div>
+                <div class="flex gap-1">
+                    <div class="bar flex-1"><div class="bar-fill" style="width:{{ home_val }}%"></div></div>
+                    <div class="bar flex-1"><div class="bar-fill" style="width:{{ away_val }}%; margin-left:auto; background: linear-gradient(90deg, #00E676, #7c3aed);"></div></div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Formation tactique -->
+        <div class="card rounded-2xl p-4 mb-4 text-center">
+            <h3 class="text-sm font-black mb-2">🎯 Schémas tactiques</h3>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <p class="text-[10px] text-sec">{{ match.homeTeam.shortName }}</p>
+                    <p class="text-2xl font-black text-purple-500">{{ a.formations.home }}</p>
+                </div>
+                <div>
+                    <p class="text-[10px] text-sec">{{ match.awayTeam.shortName }}</p>
+                    <p class="text-2xl font-black text-green-500">{{ a.formations.away }}</p>
+                </div>
+            </div>
+        </div>
+
+        <a href="/" class="block text-center py-3 mt-4 rounded-xl bg-purple-500 text-white font-bold text-sm">
+            ← Retour aux matchs
+        </a>
+    </div>
+
+    <script>
+        if (window.Telegram && window.Telegram.WebApp) {
+            const tg = window.Telegram.WebApp;
+            tg.ready(); tg.expand();
+            tg.BackButton.show();
+            tg.BackButton.onClick(() => window.location.href = '/');
+        }
+    </script>
+</body>
+</html>
