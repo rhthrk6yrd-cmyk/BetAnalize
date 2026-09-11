@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>BetAnalyzer Pro</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        'primary': '#7c3aed',        // Violet betting
+                        'primary-dark': '#5b21b6',
+                        'accent': '#00E676',
+                        'gold': '#FFD700',
+                        'live': '#ef4444',
+                        'card-dark': '#1a0f2e',
+                        'card-light': '#f5f3ff',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        html { scroll-behavior: smooth; }
+
+        /* THÈME AUTO (Light + Dark) */
+        :root {
+            --bg-main: #ffffff;
+            --bg-card: #f5f3ff;
+            --bg-card-hover: #ede9fe;
+            --text-main: #1f2937;
+            --text-secondary: #6b7280;
+            --border-color: rgba(124, 58, 237, 0.15);
+            --card-purple: linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%);
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-main: #0a0511;
+                --bg-card: #1a0f2e;
+                --bg-card-hover: #2d1b4e;
+                --text-main: #ffffff;
+                --text-secondary: #a1a1aa;
+                --border-color: rgba(255, 255, 255, 0.08);
+                --card-purple: linear-gradient(135deg, #4c1d95 0%, #7c3aed 100%);
+            }
+        }
+        body {
+            background: var(--bg-main);
+            color: var(--text-main);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            margin: 0; padding: 0;
+        }
+
+        .card { background: var(--bg-card); border: 1px solid var(--border-color); }
+        .card:hover { background: var(--bg-card-hover); }
+        .text-sec { color: var(--text-secondary); }
+        .card-purple { background: var(--card-purple); }
+        .border-subtle { border-color: var(--border-color); }
+
+        /* Header sticky */
+        .sticky-header {
+            position: sticky; top: 0; z-index: 40;
+            background: var(--bg-main);
+            border-bottom: 1px solid var(--border-color);
+            backdrop-filter: blur(12px);
+        }
+
+        /* Scroll horizontal */
+        .scroll-x {
+            display: flex; gap: 8px; overflow-x: auto;
+            scrollbar-width: none; -ms-overflow-style: none;
+            padding-bottom: 8px;
+        }
+        .scroll-x::-webkit-scrollbar { display: none; }
+
+        /* Pilules */
+        .pill {
+            display: inline-flex; align-items: center; gap: 4px;
+            padding: 8px 14px; border-radius: 999px;
+            font-size: 12px; font-weight: 600;
+            background: var(--bg-card); color: var(--text-main);
+            border: 1px solid var(--border-color);
+            white-space: nowrap; cursor: pointer;
+            transition: all 0.2s;
+        }
+        .pill:hover { transform: translateY(-1px); }
+        .pill.active {
+            background: #7c3aed; color: white; border-color: #7c3aed;
+        }
+        .pill.live { background: #ef4444; color: white; border-color: #ef4444; }
+
+        /* Animations */
+        @keyframes pulse-live {
+            0%, 100% { opacity: 1; box-shadow: 0 0 8px #ef4444; }
+            50% { opacity: 0.6; box-shadow: 0 0 4px #ef4444; }
+        }
+        .live-dot {
+            width: 8px; height: 8px; background: #ef4444;
+            border-radius: 50%; display: inline-block;
+            animation: pulse-live 1.2s infinite;
+        }
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(15px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-slide-up { animation: slideUp 0.4s ease-out; }
+
+        /* Match card */
+        .match-card {
+            background: var(--card-purple);
+            border-radius: 16px; padding: 14px;
+            color: white; box-shadow: 0 4px 14px rgba(124, 58, 237, 0.25);
+            transition: transform 0.2s;
+        }
+        .match-card:hover { transform: translateY(-2px); }
+
+        /* Bouton analyser */
+        .btn-analyze {
+            background: linear-gradient(90deg, #06b6d4 0%, #3b82f6 100%);
+            color: white; padding: 10px 16px; border-radius: 12px;
+            font-weight: 700; font-size: 12px; width: 100%;
+            display: flex; align-items: center; justify-content: center; gap: 6px;
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.4);
+            transition: all 0.2s;
+        }
+        .btn-analyze:hover {
+            box-shadow: 0 0 30px rgba(59, 130, 246, 0.6);
+            transform: scale(1.02);
+        }
+
+        /* Accordion */
+        details summary { list-style: none; cursor: pointer; }
+        details summary::-webkit-details-marker { display: none; }
+        details[open] summary .chevron { transform: rotate(180deg); }
+        .chevron { transition: transform 0.2s; }
+
+        /* Safe area iOS */
+        .safe-top { padding-top: env(safe-area-inset-top, 0); }
+        .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 16px); }
+
+        /* Onglets */
+        .tab {
+            flex: 1; padding: 8px 4px; text-align: center;
+            font-size: 12px; font-weight: 600; color: var(--text-secondary);
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+        .tab.active { color: #7c3aed; border-bottom-color: #7c3aed; }
+    </style>
+</head>
+
+<body class="safe-bottom">
+
+    <!-- ==================== HEADER STICKY ==================== -->
+    <header class="sticky-header safe-top">
+        <!-- Ligne 1 : Logo + Badge -->
+        <div class="flex items-center justify-between px-4 py-3">
+            <div class="flex items-center gap-2">
+                <div class="relative">
+                    <span class="text-2xl">🏟️</span>
+                    <span class="absolute -bottom-1 -right-1 text-sm">⚽</span>
+                </div>
+                <div>
+                    <p class="text-sm font-black">BetAnalyzer</p>
+                    <div class="flex items-center gap-1">
+                        <span class="text-[8px] text-white bg-green-500 rounded px-1 py-0.5 font-bold">✓ 16 CRITÈRES</span>
+                    </div>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="text-[10px] font-bold text-white bg-green-500 rounded-full px-3 py-1.5">
+                    {{ total_count }} Matchs
+                </span>
+            </div>
+        </div>
+
+        <!-- Ligne 2 : Onglets -->
+        <div class="flex border-t border-subtle">
+            <a href="#menu" class="tab active">🏠 Menu</a>
+            <a href="#analyses" class="tab">📊 Analyses</a>
+            <a href="#methode" class="tab">📚 Méthode</a>
+        </div>
+    </header>
+
+    <main class="max-w-4xl mx-auto px-3 pb-4">
+
+        <!-- ==================== HERO BANNER ==================== -->
+        <section class="mt-4 animate-slide-up">
+            <div class="card rounded-2xl p-4">
+                <h1 class="text-lg font-black mb-1">
+                    <span class="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+                        Analyse IA de Paris Sportifs
+                    </span>
+                </h1>
+                <p class="text-xs text-sec mb-3">
+                    Algorithme à 16 critères : forme, tactique, alchimie, absences, Poisson & Live IA.
+                </p>
+
+                <!-- 2 cartes compteurs -->
+                <div class="grid grid-cols-2 gap-2">
+                    <div class="card rounded-xl p-3">
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="live-dot"></span>
+                            <span class="text-[10px] font-bold text-live uppercase">En direct</span>
+                        </div>
+                        <p class="text-2xl font-black">{{ live_count }}</p>
+                    </div>
+                    <div class="card rounded-xl p-3">
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="w-2 h-2 bg-green-500 rounded-full"></span>
+                            <span class="text-[10px] font-bold text-green-500 uppercase">À venir</span>
+                        </div>
+                        <p class="text-2xl font-black">{{ upcoming_count }}</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== BARRE DE RECHERCHE ==================== -->
+        <section class="mt-3">
+            <form method="GET" action="/" id="searchForm">
+                <div class="relative">
+                    <span class="absolute left-3 top-1/2 -translate-y-1/2 text-lg">🔍</span>
+                    <input
+                        type="text"
+                        name="q"
+                        value="{{ search }}"
+                        placeholder="Rechercher : Sénégal, Real, CAN, Maroc..."
+                        class="w-full pl-10 pr-4 py-3 rounded-xl card text-sm outline-none focus:border-primary transition-all"
+                        oninput="clearTimeout(window.st); window.st = setTimeout(()=>this.form.submit(), 500)"
+                    />
+                </div>
+            </form>
+        </section>
+
+        <!-- ==================== FILTRES PILULES ==================== -->
+        <section class="mt-3">
+            <!-- Statut -->
+            <div class="scroll-x mb-2">
+                <a href="/" class="pill {% if status_filter == 'all' %}active{% endif %}">🌐 Tous</a>
+                <a href="?status=live" class="pill {% if status_filter == 'live' %}live{% endif %}">
+                    <span class="live-dot"></span> En direct
+                </a>
+                <a href="?status=upcoming" class="pill {% if status_filter == 'upcoming' %}active{% endif %}">📅 À venir</a>
+                <a href="?competition=CAN" class="pill {% if competition_filter == 'CAN' %}active{% endif %}">🏆 CAN</a>
+                <a href="?competition=CL" class="pill {% if competition_filter == 'CL' %}active{% endif %}">🏆 UCL</a>
+            </div>
+
+            <!-- Date -->
+            <div class="scroll-x mb-2">
+                <a href="?date=today" class="pill {% if date_filter == 'today' %}active{% endif %}">📅 Aujourd'hui</a>
+                <a href="?date=tomorrow" class="pill {% if date_filter == 'tomorrow' %}active{% endif %}">📅 Demain</a>
+            </div>
+
+            <!-- Continent -->
+            <div class="scroll-x">
+                <a href="?continent=Afrique" class="pill {% if continent_filter == 'Afrique' %}active{% endif %}">🌍 Afrique</a>
+                <a href="?continent=Europe" class="pill {% if continent_filter == 'Europe' %}active{% endif %}">🇪🇺 Europe</a>
+                <a href="?continent=Amériques" class="pill {% if continent_filter == 'Amériques' %}active{% endif %}">🌎 Amériques</a>
+                <a href="?continent=Asie" class="pill {% if continent_filter == 'Asie' %}active{% endif %}">🌏 Asie</a>
+            </div>
+        </section>
+
+        <!-- ==================== ACCORDÉONS COMPÉTITIONS ==================== -->
+        <section class="mt-5">
+            <h2 class="text-sm font-black mb-2 flex items-center gap-2">
+                <span>🏆</span> Championnats & Coupes
+            </h2>
+            {% for continent, comps in comps_by_continent.items() %}
+            <details class="card rounded-xl mb-2 overflow-hidden">
+                <summary class="flex items-center justify-between p-3">
+                    <span class="text-sm font-bold flex items-center gap-2">
+                        {% if continent == 'Afrique' %}🌍
+                        {% elif continent == 'Europe' %}🇪🇺
+                        {% elif continent == 'Amériques' %}🌎
+                        {% elif continent == 'Asie' %}🌏
+                        {% else %}⚽{% endif %}
+                        {{ continent }}
+                    </span>
+                    <div class="flex items-center gap-2">
+                        <span class="text-[10px] text-sec">{{ comps | length }} comp.</span>
+                        <span class="chevron text-sec">▼</span>
+                    </div>
+                </summary>
+                <div class="border-t border-subtle p-2">
+                    {% for comp in comps %}
+                    <a href="?competition={{ comp.code }}" class="flex items-center justify-between p-2 rounded-lg hover:bg-primary/5 transition-all">
+                        <div class="flex items-center gap-2">
+                            <span class="text-lg">{{ comp.flag }}</span>
+                            <span class="text-xs font-semibold">{{ comp.name }}</span>
+                        </div>
+                        <span class="text-[10px] font-bold bg-primary/10 text-primary rounded-full px-2 py-0.5">
+                            {{ comp.match_count }}
+                        </span>
+                    </a>
+                    {% endfor %}
+                </div>
+            </details>
+            {% endfor %}
+        </section>
+
+        <!-- ==================== FIL CHRONOLOGIQUE DES MATCHS ==================== -->
+        <section class="mt-5">
+            <h2 class="text-sm font-black mb-2 flex items-center justify-between">
+                <span class="flex items-center gap-2">⚡ Matchs ({{ filtered_count }})</span>
+                {% if is_demo %}
+                <span class="text-[9px] text-gold bg-gold/10 rounded px-2 py-0.5">DEMO</span>
+                {% endif %}
+            </h2>
+
+            {% if filtered_count == 0 %}
+            <div class="card rounded-2xl p-8 text-center">
+                <p class="text-4xl mb-2">🔍</p>
+                <p class="text-sm font-bold">Aucun match trouvé</p>
+                <p class="text-xs text-sec mt-1">Modifie tes filtres</p>
+                <a href="/" class="inline-block mt-3 pill active">Réinitialiser</a>
+            </div>
+            {% else %}
+                {% for day_key, day_data in matches_by_date.items() %}
+                <div class="mb-4">
+                    <!-- Séparateur de date -->
+                    <div class="flex items-center gap-2 mb-2 mt-3">
+                        <span class="text-lg">📌</span>
+                        <span class="text-xs font-black uppercase">{{ day_data.label }}</span>
+                        <div class="flex-1 h-px bg-primary/20"></div>
+                        <span class="text-[10px] text-sec">{{ day_data.matches | length }} match(s)</span>
+                    </div>
+
+                    <!-- Cards des matchs -->
+                    <div class="space-y-2">
+                        {% for match in day_data.matches %}
+                        <div class="match-card animate-slide-up">
+                            <!-- En-tête -->
+                            <div class="flex items-center justify-between mb-3 text-xs">
+                                <div class="flex items-center gap-1.5 opacity-90">
+                                    <span>{{ match.competition.flag }}</span>
+                                    <span class="font-semibold truncate max-w-[140px]">{{ match.competition.name }}</span>
+                                    <span class="text-[9px] bg-white/20 rounded px-1.5 py-0.5">{{ match.category }}</span>
+                                </div>
+                                {% if match.status == 'IN_PLAY' or match.status == 'LIVE' %}
+                                <span class="flex items-center gap-1 text-white bg-red-500 rounded-full px-2 py-0.5 text-[10px] font-bold">
+                                    <span class="live-dot"></span> LIVE {{ match.minute or 0 }}'
+                                </span>
+                                {% elif match.status == 'FINISHED' %}
+                                <span class="text-[10px] text-white/70 font-semibold">Terminé</span>
+                                {% else %}
+                                <span class="text-[10px] text-white/80 font-semibold bg-white/10 rounded px-2 py-0.5">
+                                    {{ match.utcDate[11:16] }}
+                                </span>
+                                {% endif %}
+                            </div>
+
+                            <!-- Équipes & Score -->
+                            <div class="flex items-center justify-between mb-3">
+                                <div class="flex-1 flex flex-col items-center">
+                                    <div class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center text-xs font-black mb-1">
+                                        {{ match.homeTeam.shortName[:3] }}
+                                    </div>
+                                    <p class="text-xs font-bold text-center truncate w-full">{{ match.homeTeam.name }}</p>
+                                </div>
+
+                                <div class="px-3 text-center">
+                                    {% if match.score.fullTime.home is not none %}
+                                    <p class="text-2xl font-black">
+                                        {{ match.score.fullTime.home }} - {{ match.score.fullTime.away }}
+                                    </p>
+                                    {% else %}
+                                    <p class="text-sm text-white/70 font-bold">VS</p>
+                                    {% endif %}
+                                </div>
+
+                                <div class="flex-1 flex flex-col items-center">
+                                    <div class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center text-xs font-black mb-1">
+                                        {{ match.awayTeam.shortName[:3] }}
+                                    </div>
+                                    <p class="text-xs font-bold text-center truncate w-full">{{ match.awayTeam.name }}</p>
+                                </div>
+                            </div>
+
+                            <!-- Aperçu IA -->
+                            {% if match.analysis %}
+                            <div class="flex items-center justify-around bg-white/10 rounded-lg py-2 mb-2 text-[10px]">
+                                <div class="text-center">
+                                    <p class="text-white/70">Prono</p>
+                                    <p class="font-black">{{ match.analysis.prediction }}</p>
+                                </div>
+                                <div class="text-center">
+                                    <p class="text-white/70">Confiance</p>
+                                    <p class="font-black text-gold">{{ match.analysis.confidence }}%</p>
+                                </div>
+                                <div class="text-center">
+                                    <p class="text-white/70">Sécurité</p>
+                                    <p class="font-black text-xs">{{ match.analysis.safety_bet }}</p>
+                                </div>
+                            </div>
+                            {% endif %}
+
+                            <!-- Bouton Analyser -->
+                            <a href="/match/{{ match.id }}" class="btn-analyze">
+                                ⚡ ANALYSER LE MATCH (16 CRITÈRES IA)
+                            </a>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            {% endif %}
+        </section>
+
+    </main>
+
+    <script>
+        // Telegram WebApp
+        if (window.Telegram && window.Telegram.WebApp) {
+            const tg = window.Telegram.WebApp;
+            tg.ready();
+            tg.expand();
+            // Adapte le header/background au thème Telegram
+            if (tg.colorScheme === 'dark') {
+                document.documentElement.classList.add('dark');
+            }
+        }
+    </script>
+</body>
+</html>
